@@ -1,0 +1,172 @@
+---
+title: "Convergence of Monte Carlo Simulations"
+subtitle: "The use of quantile regression to estimate the required number of iterations when conducting MSE"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  word_document:
+  mathjax: TRUE
+pdf_document:
+  fig_width:  8 
+  fig_height: 6 
+bibliography: /home/laurence/Desktop/refs.bib
+tags: [FLife]
+license: Creative Commons Attribution-ShareAlike 4.0 International Public License
+---
+
+When conducting MSE Monte Carlo simulation are performed for a number of independent iterations and then summary statistics, related to stock status, sustainability, yield and inter-annual variability are calculated. This allows the performance of MP can then be compared by calculating the probabilities of limits being avoided and targets being achieved. For example the probability of $B_{lim}$ being avoided and ahieving yields should be close to $MSY$. 
+
+Therefore summarising the performance of MPs requires a range of probabilities to be estimated for quantities with different statistcal properties. The number of iterations run will determine the ability to detect difference between the performance of MPs with a given degree of confidence, i.e. the power of the MSE to rank the alternative MPs. 
+
+Often a large number of iterations are run to check convergence. Instead we estimate the standard error of a quantile as a function of the number of iterations and then use the law of large numbers and the central limit theorem to predicte the number of iterations needed to achieve a given confidence interval and level. This has the advantages of not having to assume a distribution function for a quantity and not having to run more iterations than required. The MSE can also be run first for a limited number of iterations and then the summary statistics checked to ensure that adequate power has been achieved.
+
+The law of large numbers says that the average of independent samples converge to the expected value while the central limit theorem says that the error distribution of the expected value converges to a normal distribution. 
+
+The confidence interval, for a given confidence level is given by
+
+$\bar{x} \pm z_c (\frac{S_x}{\sqrt{n}})$
+
+and the error $E$ is given by 
+
+$E=\frac{S_x}{\sqrt{n}}$
+
+where $\bar{x}$ is the statistic of interest, $z_c$ is cumulative distribution function for a normally distributed random variable, $S_c$ is the standard deviation of $x$ and $n$ the number of observations.
+
+
+Therefore if the standard deviation $S_x$ is known then number of iterations $n$ required to achieve a given error for a given confidence interval can be determined by solving
+
+$n=\big[ \frac{z_cS_x}{\bar{x}E}\big]^2$
+
+
+Quantile regression, an extension of linear regression, can  be used to estimate a percentile and its corresponding standard error for a given number of iterations ($n_i$) **Figure 1**. The standard deviation can then be estimated by scaling by $\sqrt{n}$, and the number of iterations required to achieve a given precision and probabilty level **Figure 2**. 
+
+```{r knitr_init, echo=FALSE, results="hide"}
+library(knitr)
+
+opts_chunk$set(cache     =TRUE,
+               cache.path='cache/nsim/',
+               fig.path  ='tex/nsim-',
+               echo      =FALSE,
+               eval      =TRUE,
+               comment   =NA,
+               message   =FALSE,
+               warning   =FALSE)
+
+iFig=0
+```
+
+  
+```{r}
+library(FLCore)
+library(FLasher)
+library(FLBRP)
+library(FLife)
+library(FLife)
+
+library(plyr)
+library(dplyr)
+library(ggplot2)
+
+library(quantreg)
+```
+
+```{r, source}
+nsim<-function(hat,sd,p=0.05,ci=0.95,zc=function(x) qnorm(1-(1-x)/2))
+  (zc(ci)*sd/(hat*p))^2
+```
+
+```{r, population}
+set.seed(1234)
+
+eq      =lhEql(lhPar(FLPar(linf=30)))
+fbar(eq)=FLQuant(c(refpts(eq)["msy","harvest"]),dimnames=list(year=1:20))
+sk      =as(eq,"FLStock")
+sk      =propagate(sk,1000)
+
+ssb     =mdply(seq(10), function(i) {
+  f       =rlnoise(1000,log(fbar(eq)),0.1)
+  srDevs  =rlnoise(1000,fbar(sk)%=%0,0.3,b=.0)
+  res     =fwd(sk,
+               fbar     =f[,-1],
+               sr       =eq,
+               residuals=srDevs)
+                           
+  as.data.frame(ssb(res)[,20],drop=TRUE)})[,3]
+```
+
+
+```{r, sims}
+# create independent sets of random samples with different numbers of iterations
+# then use the number of iterations as factors in a quantile regression to estimate 
+# the expected quantile values and their standard errors
+
+set.seed(2345)
+its=c(seq(100,1000,100),seq(1200,10000,200))
+dat=mdply(data.frame(iters=its),function(iters) 
+            data.frame(obs=ssb[sample(seq(10000),iters)]))
+
+```
+
+
+```{r, nIts, fig.height=4,fig.width=8}
+## get the number of simulations required for a given confidence interval and level
+res=ddply(dat, .(iters), with, 
+          data.frame(n =nsim(mean(log(obs)),var(log(obs))^0.5,p=0.025,ci=0.95,
+                             zc=function(x) qlnorm(1-(1-x)/2))))       
+
+ggplot(aes(iters,n),data=res)+    
+  geom_point()+ 
+  geom_smooth(method="loess",se=FALSE)+
+  theme_bw()+
+  xlab("Number of Iterations Ran")+
+  ylab("Prediction Number of Iterations Required")
+```
+**Figure `r iFig=iFig+1; iFig`** Predicted number of iterations for by simulation number for a log normal distribution with confidence interval of 95% and confidence level pf 2.5%.
+
+
+
+```{r, sims2}
+fit=rq(obs~-1+factor(iters), tau=c(0.05,0.25,0.5,0.75,0.95), data=dat)
+smr=summary(fit)
+smr=mdply(1:5, function(x) data.frame(iters=its,smr[[x]][[3]]))
+smr=transform(smr,ptile=c(" 5th","25th","50th","75th","95th")[X1])[,-1]
+
+dimnames(smr)[[2]]=c("iters","hat","se","t","p","Percentile")
+smr$Percentile=factor(as.character(smr$Percentile),levels=c(" 5th","25th","50th","75th","95th"))
+```
+
+```{r, piles}
+ggplot(smr)+       
+  geom_point(aes(iters,hat,col=Percentile))+
+  geom_errorbar(aes(iters,ymax=hat+2*se,ymin=hat-2*se,col=Percentile))+
+  theme_bw()+xlab("Number of Iterations")+ylab("Performance Measure")+  
+  theme(legend.position="bottom")  
+```
+
+**Figure `r iFig=iFig+1; iFig`** Expected values of quantiles with 2 standard errors by number of iterations in a sample.
+
+
+```{r, nIts2, fig.height=10,fig.width=8}
+## get the number of simulations required for a given confidence interval and level
+res=ddply(smr, .(iters,Percentile), transmute, 
+          n =nsim(hat,se*iters^0.5,p=0.05,ci=0.95))      
+
+ggplot(aes(iters,n),data=res)+    
+  geom_point()+ 
+  geom_smooth(method="loess",se=FALSE)+
+  theme_bw()+
+  xlab("Number of Iterations Ran")+
+  ylab("Prediction Number of Iterations Required")+
+  facet_grid(Percentile~.,scale="free")
+```
+**Figure `r iFig=iFig+1; iFig`** Predicted number of iterations for increasing simulation number for $5^{th}$, $25^{th}$ and $50^{th}$ percentiles a confidence interval of 95% and confidence level pf 5%.
+
+```{r}
+ssb=rlnorm(1000,FLQuant(.2,dimnames=list(year=1:30)),0.1)
+ssb[]=as.numeric(ssb<1)
+
+mean(ssb)
+mean(apply(ssb,6,function(x) as.numeric(max(x))))
+mean(apply(ssb,2,function(x) as.numeric(max(x))))
+```
+
+
