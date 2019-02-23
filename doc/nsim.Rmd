@@ -60,7 +60,6 @@ library(FLCore)
 library(FLasher)
 library(FLBRP)
 library(FLife)
-library(FLife)
 
 library(plyr)
 library(dplyr)
@@ -80,18 +79,35 @@ set.seed(1234)
 eq      =lhEql(lhPar(FLPar(linf=30)))
 fbar(eq)=FLQuant(c(refpts(eq)["msy","harvest"]),dimnames=list(year=1:20))
 sk      =as(eq,"FLStock")
-sk      =propagate(sk,1000)
 
-ssb     =mdply(seq(10), function(i) {
-  f       =rlnoise(1000,log(fbar(eq)),0.1)
-  srDevs  =rlnoise(1000,fbar(sk)%=%0,0.3,b=.0)
-  res     =fwd(sk,
-               fbar     =f[,-1],
-               sr       =eq,
-               residuals=srDevs)
-                           
-  as.data.frame(ssb(res)[,20],drop=TRUE)})[,3]
+
+# sk      =propagate(sk,1000)
+# ssb     =mdply(seq(10), function(i) {
+#   f       =rlnoise(1000,log(fbar(eq)),0.1)
+#   srDevs  =rlnoise(1000,fbar(sk)%=%0,0.3,b=.0)
+#   res     =fwd(sk,
+#                fbar     =f[,-1],
+#                sr       =eq,
+#                residuals=srDevs)
+#                            
+#   as.data.frame(ssb(res)[,20],drop=TRUE)})[,3]
+
+sk      =propagate(sk,10000)
+sk      =setPlusGroup(sk, plusgroup = 10, na.rm=TRUE) 
+f       =rlnoise(10000,log(fbar(eq)),0.1)
+srDevs  =rlnoise(10000,fbar(sk)%=%0,0.3,b=.0)
+sk      =fwd(sk,fbar=f[,-1],sr=eq,residuals=srDevs) 
+
+ssb     =ssb(sk)
+save(ssb, file="../data/ssb.RData",compress="xz")
+load(file="../data/ssb.RData")
+
 ```
+
+```{r, plot_ssb}
+plot(ssb)
+```
+
 
 
 ```{r, sims}
@@ -99,10 +115,12 @@ ssb     =mdply(seq(10), function(i) {
 # then use the number of iterations as factors in a quantile regression to estimate 
 # the expected quantile values and their standard errors
 
+ssb20 <-  c(ssb[,20])
+
 set.seed(2345)
 its=c(seq(100,1000,100),seq(1200,10000,200))
 dat=mdply(data.frame(iters=its),function(iters) 
-            data.frame(obs=ssb[sample(seq(10000),iters)]))
+            data.frame(obs=ssb20[sample(seq(10000),iters)]))
 
 ```
 
@@ -125,7 +143,9 @@ ggplot(aes(iters,n),data=res)+
 
 
 ```{r, sims2}
-fit=rq(obs~-1+factor(iters), tau=c(0.05,0.25,0.5,0.75,0.95), data=dat)
+# method = "fn" for faster computation
+fit=rq(obs~-1+factor(iters), tau=c(0.05,0.25,0.5,0.75,0.95), data=dat,
+  method = "fn")
 smr=summary(fit)
 smr=mdply(1:5, function(x) data.frame(iters=its,smr[[x]][[3]]))
 smr=transform(smr,ptile=c(" 5th","25th","50th","75th","95th")[X1])[,-1]
