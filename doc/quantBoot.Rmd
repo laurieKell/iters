@@ -1,0 +1,134 @@
+---
+title: "Bootstrapped quantiles"
+subtitle: "The use of bootstrapping to estimate the required number of iterations for a given quantile precision when conducting MSE"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  word_document:
+  mathjax: TRUE
+  pdf_document:
+    fig_width:  8 
+    fig_height: 6 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache=TRUE,
+  cache.path='cache/qboot/',
+  fig.path  ='tex/qboot-',
+  fig.align='center', comment=NA,
+  message=FALSE, warning=FALSE, echo=TRUE, cache=FALSE,
+  fig.width=6, fig.height=4.5, 
+  dpi = 200)
+
+iFig=0
+```
+
+## Setup
+  
+```{r}
+# packages
+library(FLCore)
+library(ggplotFL)
+library(reshape2)
+# functions
+source("../R/qboot.R")
+source("../R/qbootplot.R")
+```
+
+```{r include=FALSE}
+par(mar = c(3,3,1,0.5), ps=10, mgp = c(2,0.5,0))
+```
+
+
+
+## A synthetic example
+
+The proposed methodology calculates an estimate of relative standard error for quantiles (se/mean; "semu") of a simulation iterations used in management strategy evaluations (MSE).
+
+
+```{r q~niter}
+load(file="../data/ssb.RData")
+L <- FLQuants("100" = ssb[,,,,,1:50], "500" = ssb[,,,,,1:500], "10000" = ssb)
+plot(L)
+```
+
+**Figure `r iFig=iFig+1; iFig`** Quantile distributions of spawning stock biomass for a synthetic stock by differing number of iterations. Darker shaded areas shows the 25\% and 75\% quantiles, with median indicated by a solid line, and 5\% and 95\% quantiles as dashed lines.
+
+
+## Predicting number of iterations for a given error level
+
+The following shows mean semu (across years) by defined quantile and number of iterations. This is related to 'Prob1' risl estimation.
+
+```{r, prob1}
+# Convert to matrix (year by iteration)
+X <- array(ssb, dim = dim(ssb)[c(2,6)])
+dimnames(X) <- dimnames(ssb)[c(2,6)] # add dim names
+
+set.seed(1)
+# run bootstrapping, model mean
+res <- qboot(X, nboot = 50, aggfun = "mean", targsemu = 1, verbose = FALSE)
+# res$nsim # predicted number of iterations needed for targsemu
+par(mar=c(3,3,2,0.5), ps=10, mgp = c(2,0.5,0))
+qbootplot(res)
+mtext("mean", side = 3, line = 0.25)
+```
+
+**Figure `r iFig=iFig+1; iFig`** Log-log plot of mean bootstrapped relative error (semu) versus number of iterations by quantile. Predicted linear regressions are shown by solid lines, and predicted number of iterations needed for the target error level are shown by dashed lines, with values in the legend.
+
+The following shows max semu (across years) by defined quantile and number of iterations. This is related to 'Prob3' risl estimation.
+
+```{r, prob3}
+set.seed(1)
+# run bootstrapping, model max
+res <- qboot(X, nboot = 50, aggfun = "max", targsemu = 1, verbose = FALSE)
+# res$nsim # predicted number of iterations needed for targsemu
+par(mar=c(3,3,2,0.5), ps=10, mgp = c(2,0.5,0))
+qbootplot(res)
+mtext("max", side = 3, line = 0.25)
+```
+
+**Figure `r iFig=iFig+1; iFig`** Log-log plot of max bootstrapped relative error (semu) versus number of iterations by quantile. Predicted linear regressions are shown by solid lines, and predicted number of iterations needed for the target error level are shown by dashed lines, with values in the legend.
+
+
+Still need to understand this...
+
+```{r, pred_max~cumiter}
+cumiter <- seq(200, 2000, 200) # c(250, 500, 750, 1000, 2000, 5000)
+RES <- vector("list", length(cumiter))
+set.seed(1)
+for(i in seq(RES)){
+  set.seed(1)
+  res <- qboot(X[,seq(cumiter[i])], nboot = 50, aggfun = "max", 
+    targsemu = 1, verbose = FALSE)
+  res$nsim$cumiter <- cumiter[i]
+  RES[[i]] <- res$nsim
+}
+RES <- do.call("rbind", RES)
+
+ggplot(RES, aes(x = cumiter, y = niter, group = quant, colour = quant)) + 
+  geom_line() + geom_point()
+```
+
+**Figure `r iFig=iFig+1; iFig`** Influence of cumulative sample size on predicted number of iterations needed for a given error level (1\%).
+
+
+
+
+
+## Software Versions
+
+* `r version$version.string`
+* FLCore: `r packageVersion('FLCore')`
+* ggplotFL: `r packageVersion('ggplotFL')`
+* reshape2: `r packageVersion('reshape2')`
+* **Compiled**: `r format(Sys.Date(), '%Y-%b-%d')`
+
+
+## License
+
+This document is licensed under the [Creative Commons Attribution-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-sa/4.0) license.
+
+## Author information
+
+**Marc Taylor**. Thünen Institute of Sea Fisheries, Marine Living Resources Unit, Herwigstraße 31, 27572 Bremerhaven, Germany. <https://www.thuenen.de/en/sf/>
+
