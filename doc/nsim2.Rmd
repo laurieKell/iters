@@ -95,7 +95,7 @@ load(file="../data/ssb.RData")
 
 
 
-Load data and plot:
+Load SSB data and plot:
 ```{r, plot_ssb}
 load(file="../data/ssb.RData")
 plot(ssb)
