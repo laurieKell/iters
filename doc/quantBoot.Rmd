@@ -34,7 +34,42 @@ nboot <- 300
 ```
 
 
-## Introduction
+# Introduction
+
+1. Description of issue: MSE search across a large number of HCR combinations. How to focus on most promising HCRs, resulting in a more efficient use of computing resources.
+2. An important aspect of HCR testing is being able to estimate the risk. In ICES, this is often centered around mainatining stock levels above a given reference spawning stock biomass (SSB) associated with depleated productivity.
+
+# Methods
+
+1. Bootstrapping approach for quantile distributions (estimate (median), and CIs (e.g. 0.025, 0.975))
+2. Prediction of number of iterations required for a given level of relative error (`lm(log(niter) ~ log(rerr) + quant)`).
+3. Use of bootstrapped metrics in algorithm to more efficiently focus MSEs on most promising HCRs.
+
+Error metric (*median absolute deviation*, MAD):
+$$MAD = median(\left| x-median(x) \right|)$$
+
+Relative error:
+$$RE = \frac{MAD}{median(x)} * 100$$
+
+Algorithm:
+
+1. Define minimum ($i_{min}$), maximum ($i_{max}$)and step size ($i_{step}$) for MSE iterations.
+2. Define target relative error ($RE_{targ}$).
+3. For each HCR ($h$), run $i \leftarrow i_{min}$ iterations 
+4. Evaluate the quantile of interest with bootstrapping approach and estimate median, confidence intervals, and relative error.
+5. If all $RE_h<RE_{targ}$ or $i<i_{max}$, **stop**
+6. Perform selection criteria:
++ 6a. Flag $h$ when upper confidence interval of 5\% quantile is greater than Btrigger.
++ 6b. Rank median catches of remaining $h$. 
++ 6c. Flag $h$ that are not in top ranked $h$ (75\% or a minimum of 30).
+7. Conduct additional iterations ($i \leftarrow i+i_{step}$) on un-flagged $h$.
+8. Return to step 4. 
+
+
+# Results
+
+# Discussion
+
 
 The proposed bootstrapping methodology calculates the relative standard error and confidence intervals for quantile estimates of a stochastic simulation. The approach is of interest for application to management strategy evaluations (MSE) in determining the number of samples required for a given level of precision. In particular, the approach can be used to optimize the search of a given harvest control parameter space given a cost function (e.g. maximum yield, minimum interannual yield variation), while avoiding poorly scoring regions after a lower number of iterations (e.g. risk of spawning stock biomass going below a given threshold).
 
