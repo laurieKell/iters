@@ -16,9 +16,9 @@
 #' dimnames(X) <- dimnames(ssb)[c(2,6)]
 #' X <- t(X)
 #' res <- qboot(X, nboot = 100, rerrTarg = 1, aggfun = "max")
-#' qbootplot(res, pch = 1)
+#' plot(res, pch = 1)
 #' 
-qbootplot <- function(obj, pch = 1, col = NULL, ...){
+plot.qboot <- function(obj, pch = 1, col = NULL, ...){
   if(missing(col)) col <- seq(obj$quant)
   
   if(is.null(obj$fit)){

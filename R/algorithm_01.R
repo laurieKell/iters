@@ -46,13 +46,19 @@ while(i <= iter.max & sum(df$cont) > 1){
     if(df$cont[j]){
       X <- A["SSB", years, as.character(seq(df$niter[j])), df$Ftrgt[j], df$Btrig[j]]
       df$risk[j] <- pcalc(SSB = X, Blim = Blim)$P3
+      # median catch (used for selection rule)
       df$medC[j] <- median(A["Catch", years, as.character(seq(df$niter[j])), df$Ftrgt[j], df$Btrig[j]])
+      # median SSB (used for plots only)
       df$medSSB[j] <- median(A["SSB", years, as.character(seq(df$niter[j])), df$Ftrgt[j], df$Btrig[j]])
+      # coefficient of variation in Catch (could be used for selection rule, but currently is not)
       df$varC[j] <- median(apply(A["Catch", years, as.character(seq(df$niter[j])), df$Ftrgt[j], df$Btrig[j]], 2, function(x){sd(log(x))}))
       # matplot(X, col = adjustcolor(1,0.1), t = "l", lty = 1, pch = NA, ylim = c(0,max(X)) ); abline(h = Blim, lty = 2, col = 2)
-      qres <- qboot(X = t(X), nboot = 20, quant = c(0.05, 0.5, 0.95), 
+      # bootstrapped 5% quantile
+      qres <- qboot(X = t(X), nboot = 50, quant = c(0.05), 
         niter = ncol(X), ci = 0.95, verbose = FALSE)
+      # calculate the lowest upper CI value of the 5% quantile (for selection rule)
       df$q05ciupp[j] <- min(qres$ciup[, "0.05", as.character(df$niter[j])])
+      # calculate the maximum relative error of the 5% quantile (for stoppage rule)
       df$rerr[j] <- max(qres$rerr[, "0.05", as.character(df$niter[j])])
 
     }
@@ -100,6 +106,15 @@ while(i <= iter.max & sum(df$cont) > 1){
     contour(x = x, y = y, z = risk, col = 2, add = TRUE)
     mtext(text = "median Catch", side = 3, line = 0.25, adj = 0)
     
+    # varC
+    varC <- B; varC[] <- df$varC
+    image(x = x, y = y, z = varC, col = grey.colors(100),
+      xlab = "Btrigger", ylab = "Ftarget")
+    points(as.numeric(best$Btrig), as.numeric(best$Ftrgt), col = 3, pch = 16)
+    contour(x = x, y = y, z = varC, col = 1, add = TRUE)
+    contour(x = x, y = y, z = risk, col = 2, add = TRUE)
+    mtext(text = "CV of catch", side = 3, line = 0.25, adj = 0)
+    
     # medSSB
     medSSB <- B; medSSB[] <- df$medSSB
     image(x = x, y = y, z = medSSB, col = grey.colors(100),
@@ -109,22 +124,22 @@ while(i <= iter.max & sum(df$cont) > 1){
     contour(x = x, y = y, z = risk, col = 2, add = TRUE)
     mtext(text = "median SSB", side = 3, line = 0.25, adj = 0)
   
-    # iterations
+    # Iterations completed
     niter <- B; niter[] <- df$niter
     image(x = x, y = y, z = niter, col = grey.colors(100),
       xlab = "Btrigger", ylab = "Ftarget")
     points(as.numeric(best$Btrig), as.numeric(best$Ftrgt), col = 3, pch = 16)
-    contour(x = x, y = y, z = niter, col = 1, add = TRUE)
+    contour(x = x, y = y, z = niter, col = 1, add = TRUE, nlevels = 5)
     contour(x = x, y = y, z = risk, col = 2, add = TRUE)
     mtext(text = "Iterations completed", side = 3, line = 0.25, adj = 0)
     
-    # cont
-    cont <- B; cont[] <- df$cont
-    image(x = x, y = y, z = cont, col = grey.colors(100),
-      xlab = "Btrigger", ylab = "Ftarget")
-    points(as.numeric(best$Btrig), as.numeric(best$Ftrgt), col = 3, pch = 16)
-    contour(x = x, y = y, z = risk, col = 2, add = TRUE)
-    mtext(text = "Continuing", side = 3, line = 0.25, adj = 0)
+    # # Continuing
+    # cont <- B; cont[] <- df$cont
+    # image(x = x, y = y, z = cont, col = grey.colors(100),
+    #   xlab = "Btrigger", ylab = "Ftarget")
+    # points(as.numeric(best$Btrig), as.numeric(best$Ftrgt), col = 3, pch = 16)
+    # contour(x = x, y = y, z = risk, col = 2, add = TRUE)
+    # mtext(text = "Continuing", side = 3, line = 0.25, adj = 0)
     
     mtext(text = paste("iter =", i), side = 3, line = 0.25, adj = 0.1, outer = TRUE)
     par(op)
@@ -156,19 +171,7 @@ image_write(img, path = "figs/algo_animation.gif", format = "gif")
 
 
 
-
-bigdata <- image_read('https://jeroen.github.io/images/bigdata.jpg')
-frink <- image_read("https://jeroen.github.io/images/frink.png")
-logo <- image_read("https://jeroen.github.io/images/Rlogo.png")
-img <- c(bigdata, logo, frink)
-img <- image_scale(frame.i, "300x300")
-image_info(img)
-
-animation <- image_animate(img, fps = 2, optimize = TRUE)
-print(animation)
-
-system('"C:\\Program Files\\ImageMagick-7.0.7-Q16\\convert.exe" -delay 20 -loop 0 figs/algo_iter*.png figs/algo_iter_animation.gif')
-system('"C:\\Program Files\\ImageMagick-7.0.7-Q16\\convert.exe" -gravity Center -crop 2800x1200+0+0 -delay 20 -loop 0 figs/algo_iter*.png figs/algo_iter_animation.gif')
+#  other stats ------------------------------------------------------------
 
 
 # Best

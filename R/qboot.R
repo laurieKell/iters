@@ -47,10 +47,10 @@
 #' X <- t(X)
 #' res <- qboot(X, nboot = 100, rerrTarg = 1)
 #' res$ciLevs
-#' qbootplot(res)
+#' plot(res)
 #' 
 #' res <- qboot(X, nboot = 100, rerrTarg = 1, niter = 200)
-#' # qbootplot(res) # will return an error as there is nothing to plot
+#' # plot(res) # will return an error as there is nothing to plot
 #' 
 #' 
 #' 
@@ -74,10 +74,11 @@ qboot <- function(X, nboot = 30, quant = c(0.95,0.75,0.5,0.25,0.05),
     # determine the quantiles of sub-sampled iterations (bootstrapping)
     for(n in seq(nboot)){
       if(ncol(X)==1){
-        qn[,,n] <- quantile(X[sample(nrow(X), niter[i], replace = TRUE),], prob=quant)
+        qn[,,n] <- quantile(X[sample(nrow(X), niter[i], replace = TRUE),], 
+          prob = quant)
       } else {
         qn[,,n] <- t(apply(X[sample(nrow(X), niter[i], replace = TRUE),], 
-          MARGIN = 2, FUN = quantile, prob=quant))
+          MARGIN = 2, FUN = quantile, prob = quant))
       }
     }
     # determine the CIs of bootstrapped quantiles

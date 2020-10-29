@@ -30,48 +30,215 @@ library(reshape2)
 # functions
 source("../R/qboot.R")
 source("../R/qbootplot.R")
-nboot <- 300
+nboot <- 99
 ```
 
 
-# Introduction
+# 1. Introduction
 
-1. Description of issue: MSE search across a large number of HCR combinations. How to focus on most promising HCRs, resulting in a more efficient use of computing resources.
-2. An important aspect of HCR testing is being able to estimate the risk. In ICES, this is often centered around mainatining stock levels above a given reference spawning stock biomass (SSB) associated with depleated productivity.
+MSEs are often used to compare the performance of alternate harvest control rules (HCRs) in terms of variables of interest (e.g. maximum yield, yield variation, and spawning stock biomass). Multiple iterations are conducted in order to take into account various types of variation (e.g. recruitment, observation error, implementation error). An important aspect of HCR testing is in the estimation of the liklihood of particular outcomes occuring.  For example, HCRs frequently used in ICES are based on
+this is often centered around mainatining stock levels above a given reference spawning stock biomass (SSB) associated with depleated productivity.
 
-# Methods
+The proposed bootstrapping method estimates errors of distribution quantiles for these variables of interest, which can be used as diagnostic metrics for estimate confidence or in the prediction of the number of iterations required for achieving a desired level of precision. A practical application of the method is to more efficiently identify most promising HCRs, allowing for more economical allocation of computation resources. 
 
-1. Bootstrapping approach for quantile distributions (estimate (median), and CIs (e.g. 0.025, 0.975))
-2. Prediction of number of iterations required for a given level of relative error (`lm(log(niter) ~ log(rerr) + quant)`).
-3. Use of bootstrapped metrics in algorithm to more efficiently focus MSEs on most promising HCRs.
+
+# 2. Methods 
+
+# 2.1. Example dataset
+
+
+```{r q~niter}
+load(file="../data/codMSE_A.Rdata")
+
+SSB <- A["SSB",,, "0.31", "150000"]
+ssb <- FLCore::FLQuant(SSB[1,], dim = c(1,dim(SSB)[1],1,1,1,1000), dimnames = dimnames(SSB))
+ssb[] <- SSB
+
+L <- FLQuants("iter = 50" = ssb[,,,,,1:50], "iter = 200" = ssb[,,,,,1:200], "iter = 1000" = ssb)
+plot(L)
+```
+
+**Figure `r iFig=iFig+1; iFig`.** Quantile distributions of spawning stock biomass for North Sea cod  differing number of iterations. Darker shaded areas shows the 25\% and 75\% quantiles, with median indicated by a solid line, and 5\% and 95\% quantiles as dashed lines.
+
+
+
+
+```{r one_hcr}
+op <- par(mar = c(2, 3.5,1,1), mgp = c(2,0.5,0), ps = 10)
+matplot(x = as.numeric(dimnames(SSB)$year), y = SSB, 
+  t = "l", xlab = "", lty = 1, ylab = "SSB [t]", col = rgb(0,0,0,0.1))
+par(op)
+```
+
+
+
+# 2.2. Bootrapping procedure
+
+Bootstrapping approach for quantile distributions (estimate (median), and CIs (e.g. 0.025, 0.975))
 
 Error metric (*median absolute deviation*, MAD):
 $$MAD = median(\left| x-median(x) \right|)$$
 
-Relative error:
+Relative error
 $$RE = \frac{MAD}{median(x)} * 100$$
+
+
+# 2.3. Predictive model
+
+Prediction of number of iterations required for a given level of relative error (`lm(log(niter) ~ log(rerr) + quant)`).
+
+
+# 2.4. Application in optimal harvest control rule selection 
+
+3. Use of bootstrapped metrics in algorithm to more efficiently focus MSEs on most promising HCRs.
+
 
 Algorithm:
 
-1. Define minimum ($i_{min}$), maximum ($i_{max}$)and step size ($i_{step}$) for MSE iterations.
+1. Define minimum ($i_{min}$), maximum ($i_{max}$) and step size ($i_{step}$) for MSE iterations.
 2. Define target relative error ($RE_{targ}$).
-3. For each HCR ($h$), run $i \leftarrow i_{min}$ iterations 
+3. For each HCR ($HCR_h$), run $i \leftarrow i_{min}$ iterations 
 4. Evaluate the quantile of interest with bootstrapping approach and estimate median, confidence intervals, and relative error.
 5. If all $RE_h<RE_{targ}$ or $i<i_{max}$, **stop**
 6. Perform selection criteria:
 + 6a. Flag $h$ when upper confidence interval of 5\% quantile is greater than Btrigger.
 + 6b. Rank median catches of remaining $h$. 
 + 6c. Flag $h$ that are not in top ranked $h$ (75\% or a minimum of 30).
-7. Conduct additional iterations ($i \leftarrow i+i_{step}$) on un-flagged $h$.
+7. Conduct additional iterations ($i \leftarrow i+i_{step}$) on un-flagged $HCR_h$.
 8. Return to step 4. 
 
 
-# Results
-
-# Discussion
+# 3. Results
 
 
-The proposed bootstrapping methodology calculates the relative standard error and confidence intervals for quantile estimates of a stochastic simulation. The approach is of interest for application to management strategy evaluations (MSE) in determining the number of samples required for a given level of precision. In particular, the approach can be used to optimize the search of a given harvest control parameter space given a cost function (e.g. maximum yield, minimum interannual yield variation), while avoiding poorly scoring regions after a lower number of iterations (e.g. risk of spawning stock biomass going below a given threshold).
+
+
+
+# 3.1. Performance of prediction model
+
+
+```{r, pred}
+# Convert to matrix (year by iteration)
+Xfull <- array(ssb, dim = dim(ssb)[c(2,6)], dimnames = dimnames(ssb)[c(2,6)])
+Xfull <- t(Xfull) # transpose to make iters rows
+
+X <- array(ssb[1,tail(seq(dim(ssb)[2]),10),1,1,1,], dim = c(10,1000))
+dimnames(X) <- list(year = tail(dimnames(ssb)[[2]],10), iter = dimnames(ssb)[[6]]) # add 
+X <- t(X) # transpose to make iters rows
+
+# run bootstrapping, model mean
+set.seed(1)
+resMean <- qboot(X, nboot = nboot, quant = c(0.05, 0.5, 0.95),
+  niter = round(exp(seq(log(nrow(X))*0.5, log(nrow(X)), length.out = 10))),
+  aggfun = "mean", rerrTarg = 1, verbose = FALSE)
+set.seed(1)
+resMax <- qboot(X, nboot = nboot, 
+  niter = round(exp(seq(log(nrow(X))*0.5, log(nrow(X)), length.out = 10))),
+  aggfun = "max", rerrTarg = 1, verbose = FALSE)
+
+op <- par(mfrow = c(1,1), mar=c(3,3,2,0.5), ps=10, mgp = c(2,0.5,0))
+qbootplot(resMean, col = pals::brewer.set1(3))
+mtext("Mean yearly RE", side = 3, line = 0.25)
+# qbootplot(resMax)
+# mtext("Maximum yearly RE", side = 3, line = 0.25)
+par(op)
+
+```
+
+**Figure `r iFig=iFig+1; iFig`.** Log-log plot of mean (left panel) and max (right panel) bootstrapped relative error (MAD) versus number of iterations by quantile. Predicted linear regressions are shown by solid lines, and predicted number of iterations needed for the target error level are shown by dashed lines, with values in the legend.
+
+
+
+
+
+```{r ci~niter}
+par(mar=c(3,3,2,0.5), ps=10, mgp = c(2,0.5,0))
+# make dataframe of subset of ci data
+set.seed(1)
+resMeanFull <- qboot(Xfull, nboot = nboot, 
+  niter = round(exp(seq(log(nrow(Xfull))*0.5, log(nrow(Xfull)), length.out = 10))),
+  aggfun = "mean", rerrTarg = 1, verbose = FALSE)
+
+res <- resMeanFull
+res2 <- expand.grid(dimnames(res$est))
+# res2$niter <- factor(round(as.numeric(as.character(res2$niter))), 
+#   levels = ac(sort(as.numeric(ac(levels(res2$niter))))))
+res2$niter <- as.numeric(ac(res2$niter))
+res2$quant <- as.numeric(ac(res2$quant))
+
+
+res2$year <- as.numeric(as.character(res2$Var1))
+res2$est <- c(res$est)
+res2$cilow <- c(res$cilow)
+res2$ciup <- c(res$ciup)
+res2 <- subset(res2, niter %in% unique(res2$niter)[c(1,5,10)] & 
+    quant %in% unique(res2$quant)[c(1,3,5)])
+res2$niter <- factor(res2$niter, levels = sort(unique(res2$niter)))
+res2$quant <- factor(res2$quant, levels = sort(unique(res2$quant)))
+
+ci <- c(res2$cilow, res2$ciup)
+plot(est ~ year, data = res2, ylim = range(ci), t="n", xlab = "",
+  ylab = "Spawning stock biomass (SSB)")
+rect(xleft = min(tail(unique(res2$year), 10)),
+  xright = max(tail(unique(res2$year), 10)), ybottom = 0, ytop = 1e6,
+  border = NA, col = "grey90")
+COL <- pals::brewer.set1(length(levels(res2$quant)))
+for(i in seq(levels(res2$quant))){
+  for(j in seq(levels(res2$niter))){
+    dat.ij = subset(res2, quant == levels(res2$quant)[i] &
+      niter == levels(res2$niter)[j])
+    # dat.ij[order(dat.ij$year),]
+    polygon(x = c(dat.ij$year, rev(dat.ij$year)), 
+      y = c(dat.ij$cilow, rev(dat.ij$ciup)),
+      col = adjustcolor(COL[i], 0.3), border = NA)# , lty = j+1)
+  }
+  lines(est ~ year, subset(res2, 
+    quant == levels(res2$quant)[i] & niter == 1000), col=1)
+}
+abline(h = 107000, lty = 3)
+box()
+```
+
+**Figure `r iFig=iFig+1; iFig`.** True quantiles (lines; 5, 50, & 95\%) and their confidence intervals (95\%, shaded area) for varying sample sizes (`r paste("n =", paste(levels(res2$niter), collapse=", "))`).
+
+
+
+```{r, pred_max~cumiter}
+cumiter <- seq(100, 1000, 100) # c(250, 500, 750, 1000, 2000, 5000)
+res <- vector("list", length(cumiter))
+set.seed(1)
+for(i in seq(res)){
+  set.seed(1)
+  res.i <- qboot(X[seq(cumiter[i]),], nboot = 499, aggfun = "mean", 
+    rerrTarg = 1, verbose = FALSE)
+  res.i$fitpred$cumiter <- cumiter[i]
+  res[[i]] <- res.i$fitpred
+}
+res <- do.call("rbind", res)
+
+ggplot(subset(res, quant %in% c("0.95", "0.5", "0.05"))) + 
+  aes(x = cumiter, y = niter, group = quant, colour = quant) + 
+  geom_line() + geom_point() + 
+  xlab("Cumulative iterations completed") + 
+  ylab("Iterations required for 1% RE") +
+  scale_colour_brewer(palette = "Set1", direction = 1,
+    aesthetics = "colour")
+```
+
+**Figure `r iFig=iFig+1; iFig`.** Influence of cumulative sample size on predicted number of iterations needed for a given error level (1\%).
+
+
+
+
+
+# 3.2. Performance of optimal harvest control rule selection
+
+
+
+# 4. Discussion
+
+
+
 
 The bootstrapping approach allows for two main outputs: 
 
@@ -89,111 +256,27 @@ The latter output is based on the known relationship between *se* and sample siz
 ## A synthetic example
 
 
-```{r q~niter}
-load(file="../data/ssb.RData")
-L <- FLQuants("100" = ssb[,,,,,1:50], "500" = ssb[,,,,,1:500], "10000" = ssb)
-plot(L)
-```
 
-**Figure `r iFig=iFig+1; iFig`.** Quantile distributions of spawning stock biomass for a synthetic stock by differing number of iterations. Darker shaded areas shows the 25\% and 75\% quantiles, with median indicated by a solid line, and 5\% and 95\% quantiles as dashed lines.
+<!-- **Figure `r iFig=iFig+1; iFig`.** Quantile distributions of spawning stock biomass for a synthetic stock by differing number of iterations. Darker shaded areas shows the 25\% and 75\% quantiles, with median indicated by a solid line, and 5\% and 95\% quantiles as dashed lines. -->
 
 
 ## Predicting number of iterations for a given error level
 
 The following shows mean relative standard error across years by defined quantile and number of iterations. This is related to 'Prob1' risk estimation.
 
-```{r, prob1}
-# Convert to matrix (year by iteration)
-X <- array(ssb, dim = dim(ssb)[c(2,6)])
-dimnames(X) <- dimnames(ssb)[c(2,6)] # add dim names
-X <- t(X) # transpose to make iters rows
 
-set.seed(1)
-# run bootstrapping, model mean
-res <- qboot(X, nboot = nboot, aggfun = "mean", rerrTarg = 1, verbose = FALSE)
-par(mar=c(3,3,2,0.5), ps=10, mgp = c(2,0.5,0))
-qbootplot(res)
-mtext("mean", side = 3, line = 0.25)
-```
 
-**Figure `r iFig=iFig+1; iFig`.** Log-log plot of mean bootstrapped relative standard error (rse) versus number of iterations by quantile. Predicted linear regressions are shown by solid lines, and predicted number of iterations needed for the target error level are shown by dashed lines, with values in the legend.
+<!-- **Figure `r iFig=iFig+1; iFig`.** Log-log plot of mean bootstrapped relative standard error (rse) versus number of iterations by quantile. Predicted linear regressions are shown by solid lines, and predicted number of iterations needed for the target error level are shown by dashed lines, with values in the legend. -->
 
 The following shows max rse across years by defined quantile and number of iterations. This is related to 'Prob3' risk estimation.
 
-```{r, prob3}
-set.seed(1)
-# run bootstrapping, model max
-res <- qboot(X, nboot = nboot, aggfun = "max", rerrTarg = 1, verbose = FALSE)
-par(mar=c(3,3,2,0.5), ps=10, mgp = c(2,0.5,0))
-qbootplot(res)
-mtext("max", side = 3, line = 0.25)
-```
 
-**Figure `r iFig=iFig+1; iFig`.** Log-log plot of max bootstrapped relative error (rse) versus number of iterations by quantile. Predicted linear regressions are shown by solid lines, and predicted number of iterations needed for the target error level are shown by dashed lines, with values in the legend.
+<!-- **Figure `r iFig=iFig+1; iFig`.** Log-log plot of max bootstrapped relative error (rse) versus number of iterations by quantile. Predicted linear regressions are shown by solid lines, and predicted number of iterations needed for the target error level are shown by dashed lines, with values in the legend. -->
 
 
 
-```{r}
-par(mar=c(3,3,2,0.5), ps=10, mgp = c(2,0.5,0))
-# make dataframe of subset of ci data
-res2 <- expand.grid(dimnames(res$est))
-res2$niter <- factor(round(as.numeric(as.character(res2$niter))))
-res2$Var1 <- as.numeric(as.character(res2$Var1))
-res2$est <- c(res$est)
-res2$cilow <- c(res$cilow)
-res2$ciup <- c(res$ciup)
-# res2$cilow <- c(res$cilow)
-# res2$ciup <- c(res$ciup)
-res2 <- subset(res2, niter %in% levels(res2$niter)[c(1,10,20)])
-
-res3 <- as.data.frame(rbind(
-  as.matrix(res2[,c("Var1", "quant", "niter", "cilow")]),
-  as.matrix(res2[rev(seq(nrow(res2))),c("Var1", "quant", "niter", "ciup")])))
-names(res3) <- c("Var1", "quant", "niter", "ci")
-res3$Var1 <- as.numeric(as.character(res3$Var1))
-res3$ci <- as.numeric(as.character(res3$ci))
-res3$niter <- factor(res3$niter, 
-  levels = ac(sort(as.numeric(ac(levels(res3$niter))))) )
-
-Qs <- apply(X, 2, quantile, prob = as.numeric(levels(res3$quant)))
-plot(ci ~ Var1, data = res3, ylim = range(ci), t="n")
-COL = rainbow(5)
-for(i in seq(levels(res3$quant))){
-  for(j in seq(levels(res3$niter))){
-    dat.ij = subset(res3, niter == levels(niter)[j] & 
-      quant == levels(quant)[i])
-    polygon(x = dat.ij$Var1, y = dat.ij$ci, 
-      col = adjustcolor(COL[i], 0.2), border = NA)
-  }
-  lines(as.numeric(colnames(Qs)), Qs[i,], col=COL[i])
-}
-
-```
-
-**Figure `r iFig=iFig+1; iFig`.** True quantiles (lines; 5, 25, 50, 75, & 95\%) and their confidence intervals (95\%, shaded area) for varying sample sizes (`r paste("n =", paste(levels(res3$niter), collapse=", "))`).
 
 
-
-Still need to understand this...
-
-```{r, pred_max~cumiter}
-cumiter <- seq(200, 2000, 200) # c(250, 500, 750, 1000, 2000, 5000)
-res <- vector("list", length(cumiter))
-set.seed(1)
-for(i in seq(res)){
-  set.seed(1)
-  res.i <- qboot(X[seq(cumiter[i]),], nboot = nboot, aggfun = "max", 
-    rerrTarg = 1, verbose = FALSE)
-  res.i$nsim$cumiter <- cumiter[i]
-  res[[i]] <- res.i$nsim
-}
-res <- do.call("rbind", res)
-
-ggplot(res, aes(x = cumiter, y = niter, group = quant, colour = quant)) + 
-  geom_line() + geom_point()
-```
-
-**Figure `r iFig=iFig+1; iFig`.** Influence of cumulative sample size on predicted number of iterations needed for a given error level (1\%).
 
 
 
